@@ -15,7 +15,10 @@ namespace Celerity.Collections;
 /// <para>
 /// Like an xor filter, a binary fuse filter answers "is this element <em>possibly</em> in the set?" with
 /// <strong>no false negatives</strong> (a <see cref="Contains"/> that returns <c>false</c> is always correct)
-/// and a fixed false-positive probability of <c>1 / 2^8 ≈ 0.39%</c>. The element set is supplied once at
+/// and a theoretical false-positive probability of <c>1 / 2^8 ≈ 0.39%</c> for an absent element. That rate
+/// assumes a well-mixing hasher: an absent element whose 64-bit key equals a stored one always reports present,
+/// so a degenerate hasher can push it to 100%, and a 32-bit-only hasher leaves a floor of roughly
+/// <c>n / 2^32</c> under it (see <see cref="IHashProvider64{T}"/>). The element set is supplied once at
 /// construction and the filter is then immutable: there is no <c>Add</c>, <c>Remove</c>, or <c>Clear</c>.
 /// A lookup is the same three byte reads and two XORs as <see cref="XorFilter{T,THasher}"/>, with no probe
 /// loop and no data-dependent branch.
@@ -35,8 +38,9 @@ namespace Celerity.Collections;
 /// <para>
 /// <strong>The saving is a large-set effect.</strong> The slot factor the peel needs grows as the set
 /// shrinks — <c>max(1.125, 0.875 + 0.25 · ln(10⁶) / ln n)</c>, the paper's sizing rule — so a binary fuse
-/// filter is about the same size as an xor filter at ten thousand elements, and <em>larger</em> below that:
-/// ≈&#160;11 bits per element at a thousand. Below roughly ten thousand elements use
+/// filter is about the same size as an xor filter at twenty thousand elements, and <em>larger</em> below that:
+/// ≈&#160;10.2 bits per element at ten thousand (an xor filter: 9.86) and ≈&#160;11.3 at a thousand. Below
+/// roughly twenty thousand elements use
 /// <see cref="XorFilter{T,THasher}"/>; <see cref="BitsPerElement"/> reports what a built filter actually
 /// costs.
 /// </para>

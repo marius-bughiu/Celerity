@@ -4149,8 +4149,11 @@ var blocked = new BinaryFuseFilter<string, StringXxHash3Hasher>(blockList);
 
 bool ShouldBlock(string url)
 {
-    // A false lets the request through immediately (no false negatives); a true is checked
-    // against the authoritative list, wrong only ~0.4% of the time.
+    // A false lets the request through immediately (no false negatives). About 0.4% of
+    // *absent* URLs also pass the filter, so a true is confirmed against the authoritative
+    // list, which makes the final answer exact. When most requests are absent, most of the
+    // filter's trues are those false positives: the filter's job is to skip the store for
+    // the rest.
     return blocked.Contains(url) && BlockListStore.Contains(url);
 }
 ```
