@@ -4120,7 +4120,8 @@ and the store is sized for that count, not for the source length.
 - `InvalidOperationException` if the peel fails under every seed in its retry budget. An
   ordinary input fails a seed only occasionally, so this takes a source built to do it: the seed
   schedule is fixed, and a caller who controls the element hashes can plant one fully colliding
-  pair per seed. Do not build from untrusted elements with a hasher an adversary can invert.
+  pair per seed. That needs no inversion: the hashers are unkeyed, so a pair can be found by
+  brute force. Treat a source an adversary controls as able to raise this exception.
 
 ### Methods and properties
 

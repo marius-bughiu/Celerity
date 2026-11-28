@@ -104,7 +104,9 @@ public class BinaryFuseFilter<T, THasher> where THasher : struct, IHashProvider<
     /// The peeling construction failed under every seed in its retry budget. Random or ordinary inputs fail a
     /// seed only occasionally, so this takes a deliberately constructed source: the seed schedule is fixed, and
     /// a caller who controls the element hashes can plant, for each seed, a pair of elements that share all
-    /// three slots. Do not build from untrusted elements with a hasher an adversary can invert.
+    /// three slots. Inverting the hasher is not required: the hashers are unkeyed, so such a pair can be found
+    /// by brute force (about 2^14 trial elements per seed at a few thousand elements). Treat a source an
+    /// adversary controls as able to raise this exception.
     /// </exception>
     public BinaryFuseFilter(IEnumerable<T> source)
     {
